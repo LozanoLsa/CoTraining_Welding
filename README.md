@@ -24,9 +24,9 @@ Co-Training exploits this asymmetry. Rather than discarding the 1,350 unlabeled 
 
 ## 📊 Dataset
 
-**1,500 laser weld records · 10 features · 2 views · Target: `defect_label` (0 / 1 / NaN)**
+**1,912 laser weld records · 10 features · 2 views · Target: `defect_label` (0 / 1 / NaN)**
 
-Of the 150 labeled welds: 105 conforming (70%), 45 defective (30%). The 1,350 unlabeled welds carry full sensor readings but no quality stamp.
+Of the 150 labeled welds: 105 conforming (70%), 45 defective (30%). The 1,762 unlabeled welds carry full sensor readings but no quality stamp.
 
 **View A — Process Parameters (machine controller output):**
 
@@ -61,11 +61,11 @@ Of the 150 labeled welds: 105 conforming (70%), 45 defective (30%). The 1,350 un
 
 **Three EDA findings that shaped the model:**
 
-**1. High travel speed is the dominant defect driver in View A.** Among labeled welds, faster-than-nominal speed consistently correlates with insufficient energy density per unit length — the thermal budget drops below what the joint geometry requires. The model's standardized coefficient for `speed_mm_s` (1.07) is the highest across both views.
+**1. High travel speed is the dominant defect driver in View A.** Among labeled welds, faster-than-nominal speed consistently correlates with insufficient energy density per unit length — the thermal budget drops below what the joint geometry requires. The model's standardized coefficient for `speed_mm_s` (0.36) is the highest in View A.
 
-**2. Penetration depth and bead height are the most protective sensor signals.** Both carry large negative coefficients in View B (-1.47 and -1.05 respectively). A weld that achieved full penetration and proper bead geometry is unlikely to be defective — the physics encoded themselves into the sensor record.
+**2. Vibration and thermal variance are the dominant defect signals in View B.** Excessive vibration during deposition and pyrometer variance both carry positive coefficients (+0.34 and +0.16 respectively), consistent with unstable melt pool dynamics during solidification. Bead height and penetration depth are protective — their negative coefficients reflect welds where the geometry turned out right.
 
-**3. Thermal variance separates quality classes more cleanly than any other View B feature.** Defective welds show higher pyrometer variance, consistent with unstable melt pool dynamics during deposition. This is the sensor the process engineer would have pointed to first.
+**3. Thermal variance shows higher values in defective welds in the labeled distribution.** Defective welds show higher pyrometer variance, consistent with unstable melt pool dynamics during deposition. In the final trained model, vibration RMS carries the dominant signal in View B — the sensor the process engineer would reach for when fixture stability is suspect.
 
 ---
 
@@ -82,13 +82,13 @@ Each view has its own independent StandardScaler embedded in a Pipeline, prevent
 | Round | Pool A size | Pool B size | New to A | New to B |
 |-------|------------|------------|---------|---------|
 | Start | 120 | 120 | — | — |
-| 1 | 897 | 237 | +777 | +117 |
-| 2 | 1,167 | 430 | +270 | +193 |
-| 3 | 1,249 | 465 | +82 | +35 |
-| 4 | 1,257 | 467 | +8 | +2 |
-| 5 | 1,262 | 467 | +5 | +0 |
+| 1 | 1,414 | 1,089 | +1,294 | +969 |
+| 2 | 1,414 | 1,103 | 0 | +14 |
+| 3 | 1,414 | 1,103 | 0 | 0 |
+| 4 | 1,414 | 1,103 | 0 | 0 |
+| 5 | 1,414 | 1,103 | 0 | 0 |
 
-Round 1 dominates: Model A (process view) teaches Model B 777 pseudo-labels in a single pass — its stronger initial signal on the cleaner process parameter space bootstraps the slower-learning sensor model rapidly. By Round 4 the loop converges; new teaching drops to single digits.
+Round 1 dominates: Model B (sensor view) teaches Model A 1,294 pseudo-labels in a single pass — the sensor signals for vibration and penetration produce a high-confidence boundary on the unlabeled pool, bootstrapping the process model rapidly. Model A simultaneously teaches Model B 969 pseudo-labels from the process parameter space. By Round 2 the loop is essentially converged; only 14 additional assignments occur across the remaining four rounds.
 
 **A note on view independence:** The cross-view correlation analysis showed a maximum pairwise correlation of 0.846 between View A and View B features. This is higher than the ideal low-correlation scenario Co-Training textbooks describe. In practice, physical process–response coupling means some correlation is unavoidable on a real welding line. The models still benefited from mutual teaching because the *information content* of each view — what geometry in feature space each model carved — remained distinct even where individual features correlated.
 
@@ -100,20 +100,20 @@ Evaluated on 30 held-out real-labeled welds — test set was separated before an
 
 | Model | Accuracy | AUC-ROC | F1 | Recall | Precision |
 |-------|---------|---------|-----|--------|-----------|
-| Model A — Process | 70.0% | 0.8095 | 0.609 | 77.8% | 50.0% |
-| Model B — Sensors | 73.3% | 0.7725 | 0.636 | 77.8% | 53.8% |
-| **Ensemble (avg)** | **73.3%** | **0.7884** | **0.636** | **77.8%** | **53.8%** |
+| Model A — Process | 73.3% | 0.8413 | 0.6667 | 88.9% | 53.3% |
+| Model B — Sensors | 60.0% | 0.7196 | 0.4000 | 44.4% | 36.4% |
+| **Ensemble (avg)** | **80.0%** | **0.8413** | **0.7000** | **77.8%** | **63.6%** |
 
 **Confusion Matrix — Ensemble (n = 30 test records):**
 
 | | Predicted: OK | Predicted: Defect |
 |--|--|--|
-| **Actual: OK** | 15 ✓ | 6 ✗ |
+| **Actual: OK** | 17 ✓ | 4 ✗ |
 | **Actual: Defect** | 2 ✗ | 7 ✓ |
 
-**Operational interpretation:** Recall of 77.8% means the ensemble caught 7 of 9 actual defective welds in the test set — the 2 misses (false negatives) represent welds that would reach downstream assembly undetected. On an automotive body panel line, false negatives carry direct cost in rework, warranty claims, and crash safety implications. The 6 false positives are over-triggers — welds flagged for inspection that were actually conforming. In a production setting, false positives cost inspection time; false negatives cost structural integrity.
+**Operational interpretation:** Recall of 77.8% means the ensemble caught 7 of 9 actual defective welds in the test set — the 2 misses (false negatives) represent welds that would reach downstream assembly undetected. On an automotive body panel line, false negatives carry direct cost in rework, warranty claims, and crash safety implications. The 4 false positives are over-triggers — welds flagged for inspection that were actually conforming. In a production setting, false positives cost inspection time; false negatives cost structural integrity.
 
-The test set (30 records) is small enough to note: single-weld swings can move metrics meaningfully. AUC-ROC of 0.789 on a 10%-labeled problem is the more stable signal — it reflects the ensemble's ranking ability across the full probability range.
+The test set (30 records) is small enough to note: single-weld swings can move metrics meaningfully. AUC-ROC of 0.841 on an 8%-labeled problem is the more stable signal — it reflects the ensemble's ranking ability across the full probability range.
 
 ---
 
@@ -123,23 +123,23 @@ The test set (30 records) is small enough to note: single-weld swings can move m
 
 | Feature | Coefficient | Direction | Interpretation |
 |---------|------------|-----------|----------------|
-| `speed_mm_s` | +1.07 | ↑ defect risk | Faster travel → lower energy density → incomplete fusion |
-| `energy_j` | −0.30 | ↓ defect risk | Higher pulse energy → more complete melt pool |
-| `frequency_khz` | −0.26 | ↓ defect risk | Higher rep rate → more uniform heat distribution |
-| `spot_diameter_mm` | −0.11 | ↓ defect risk | Wider spot → lower power density, more controlled |
-| `gas_flow_l_min` | −0.03 | ↓ defect risk | Shielding gas contributes minimally in this range |
+| `speed_mm_s` | +0.36 | ↑ defect risk | Faster travel → lower energy density → incomplete fusion |
+| `gas_flow_l_min` | −0.17 | ↓ defect risk | Shielding gas provides a protective signal at this operating range |
+| `frequency_khz` | −0.13 | ↓ defect risk | Higher frequency → slightly more stable energy delivery |
+| `energy_j` | −0.09 | ↓ defect risk | Higher pulse energy → more complete melt pool |
+| `spot_diameter_mm` | −0.01 | ↓ defect risk | Near-zero — spot geometry absorbed by speed and energy terms |
 
 **View B — Sensor Response (Model B):**
 
 | Feature | Coefficient | Direction | Interpretation |
 |---------|------------|-----------|----------------|
-| `penetration_mm` | −1.47 | ↓ defect risk | Full penetration = joint achieved — the strongest conformance signal |
-| `bead_height_mm` | −1.05 | ↓ defect risk | Proper bead geometry indicates stable melt pool |
-| `thermal_var_c` | +0.72 | ↑ defect risk | High pyrometer variance = unstable thermal front |
-| `vibration_rms` | +0.66 | ↑ defect risk | Excessive vibration during deposition disrupts solidification |
-| `acoustic_rms` | −0.35 | ↓ defect risk | Moderate acoustic signal associated with stable arc/plasma |
+| `vibration_rms` | +0.34 | ↑ defect risk | Excessive vibration during deposition — the dominant instability signal |
+| `thermal_var_c` | +0.16 | ↑ defect risk | Pyrometer variance consistent with unstable melt pool dynamics |
+| `bead_height_mm` | −0.13 | ↓ defect risk | Proper bead geometry indicates a stable, complete melt pool |
+| `penetration_mm` | −0.11 | ↓ defect risk | Full penetration = joint achieved — strong conformance indicator |
+| `acoustic_rms` | −0.10 | ↓ defect risk | Acoustic signal aligns with penetration and bead quality |
 
-The two views tell a coherent physical story from opposite directions: defects happen when the process runs too fast with insufficient energy (View A) and manifests as poor penetration, low bead height, and high thermal instability (View B). Co-Training learned both sides of that story simultaneously from 150 labeled examples.
+The two views tell a coherent physical story from opposite directions: defects happen when the process runs too fast (View A) and manifest as excessive vibration and thermal instability, with suppressed bead height and penetration depth (View B). Co-Training learned both sides of that story simultaneously from 150 labeled examples.
 
 ---
 
@@ -154,13 +154,13 @@ CoTraining_Welding/
 └── README.md
 ```
 
-> 📦 **Full Project Pack** — complete dataset (1,500 welds with all 1,350 unlabeled records),
+> 📦 **Full Project Pack** — complete dataset (1,912 welds with all 1,762 unlabeled records),
 > notebook with full outputs, presentation deck (PPTX + PDF), and `app.py` simulator
 > available on [Gumroad](https://lozanolsa.gumroad.com).
 >
 > The GitHub CSV includes the full 150 labeled welds plus 250 unlabeled records — enough
 > to run both views of the Co-Training pipeline and observe the pseudo-labeling mechanism.
-> The full unlabeled pool (1,350 welds) showing all 5 convergence rounds is in the paid pack.
+> The full unlabeled pool (1,762 welds) showing all 5 convergence rounds is in the paid pack.
 
 ---
 
@@ -197,14 +197,14 @@ seaborn
 **1. The value of Co-Training is structural, not statistical.**
 It works because the two views are collected by independent instruments measuring different physical quantities. The algorithm doesn't create that independence — it just uses it. Before applying Co-Training, verify that your views genuinely come from different measurement principles. If they share the same sensor chain, the cross-teaching degrades to noise.
 
-**2. Model A taught Model B far more than the reverse.**
-In Round 1, the process view generated 777 pseudo-labels versus 117 from the sensor view. This asymmetry makes physical sense: process parameters are set by the controller and are therefore cleaner and more predictable than real-time sensor signals subject to fixture variation, acoustic reflections, and thermal drift. The sensor view needed the process view's early confidence to bootstrap itself.
+**2. Model B taught Model A more than the reverse — especially in Round 1.**
+In Round 1, the sensor view generated 1,294 confident pseudo-labels versus 969 from the process view. The vibration and penetration signals in View B drew a high-confidence boundary on the unlabeled pool early, allowing the sensor model to bootstrap the process model rather than the other way around. Both views contributed substantially — the asymmetry reflects which physical signals were most separable in this dataset, not a structural weakness in either view.
 
 **3. Recall is the metric that matters on a safety-critical weld line.**
-A 70–73% accuracy number sounds modest. But catching 7 of 9 defective welds with only 120 labeled training examples — a Recall of 77.8% — is operationally meaningful. False negatives on structural automotive welds have a cost profile that false positives never can. Design the threshold accordingly.
+A 73% accuracy number sounds modest. But catching 7 of 9 defective welds with only 120 labeled training examples — a Recall of 77.8% — is operationally meaningful. False negatives on structural automotive welds have a cost profile that false positives never can. Design the threshold accordingly.
 
 **4. Pseudo-label growth is not uniform — and that is expected.**
-Round 1 added 894 pseudo-labels combined; Round 5 added 5. Rapid early expansion followed by sharp convergence is the normal Co-Training behavior: the models exhaust the easy cases quickly. The long tail of uncertain welds (those that neither view could label confidently) is not a failure — it is the algorithm accurately identifying the hardest cases.
+Round 1 added 2,263 pseudo-label assignments combined; Rounds 2–5 added 14 total. Rapid early expansion followed by near-complete convergence is the normal Co-Training behavior: the models exhaust the easy cases in a single pass. The welds that neither view could label confidently after Round 1 are not a failure — they are the algorithm accurately identifying the hardest cases in the unlabeled pool.
 
 **5. The confidence threshold is a production parameter, not a model constant.**
 The 0.65 threshold used here was chosen for calibrated Logistic Regression. On a real line, this value should be calibrated against confirmed inspection outcomes over the first production months. Set it too low and pseudo-label noise floods the training set. Set it too high and the expansion stalls. Empirical calibration, not theoretical defaults, is the right approach.

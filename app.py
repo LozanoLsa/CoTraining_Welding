@@ -269,8 +269,8 @@ with st.sidebar:
     st.caption(f"Algorithm: Co-Training (Semi-Supervised)")
     st.caption(f"View A: Process params → Logistic Regression")
     st.caption(f"View B: Sensor monitoring → Logistic Regression")
-    st.caption(f"Labeled welds: {df['is_labeled'].sum():,} (10%)")
-    st.caption(f"Unlabeled welds: {(df['is_labeled']==0).sum():,} (90%)")
+    st.caption(f"Labeled welds: {df['is_labeled'].sum():,} (8%)")
+    st.caption(f"Unlabeled welds: {(df['is_labeled']==0).sum():,} (92%)")
     st.caption(f"Co-Training rounds: {ROUNDS}")
     st.caption(f"Confidence threshold: {THRESHOLD}")
     st.divider()
@@ -287,7 +287,7 @@ st.markdown(f"""
         <span class="lsa-chip">VIEW A + VIEW B</span>
         <span class="lsa-chip">ENSEMBLE AUC {metrics['Ensemble']['AUC-ROC']:.4f}</span>
         <span class="lsa-chip">{ROUNDS} ROUNDS · THR {THRESHOLD}</span>
-        <span class="lsa-chip">90% UNLABELED</span>
+        <span class="lsa-chip">92% UNLABELED</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -297,7 +297,7 @@ k1, k2, k3, k4 = st.columns(4)
 k1.metric("Ensemble AUC",   f"{metrics['Ensemble']['AUC-ROC']:.4f}",   "Both views combined")
 k2.metric("Ensemble Recall",f"{metrics['Ensemble']['Recall']:.4f}",    "Defects caught")
 k3.metric("Ensemble F1",    f"{metrics['Ensemble']['F1']:.4f}",        "Precision-recall balance")
-k4.metric("Labeled Data",   f"{df['is_labeled'].sum():,} / {len(df):,}","Only 10% inspected")
+k4.metric("Labeled Data",   f"{df['is_labeled'].sum():,} / {len(df):,}","Only 8% inspected")
 
 # ─── TABS ─────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5 = st.tabs([

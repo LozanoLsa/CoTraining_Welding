@@ -1,0 +1,56 @@
+PROJECT: 14_CoTraining_SEMI
+TITLE: Data Sources & Feature Engineering
+
+--------------------------------------------------
+OVERVIEW:
+This dataset contains 1,912 laser weld records from an automotive body panel welding cell, of which 150 are manually labeled (105 conforming, 45 defective) and 1,762 are unlabeled. The ML task is binary defect classification using Co-Training (semi-supervised) with two structurally independent views: View A (5 process parameters from the machine controller) and View B (5 in-process sensor measurements from the material response). Co-Training round 1 expanded the labeled pool by 2,263 pseudo-labels across both views; the loop converged by round 3.
+
+--------------------------------------------------
+REAL-WORLD DATA SOURCES:
+
+Feature                                           | Source System                       | Instrument / Interface
+--------------------------------------------------|-------------------------------------|------------------------------
+energy_j, speed_mm_s, frequency_khz, spot_diameter_mm | Laser Controller (IPG / TRUMPF) | CAN bus to MES
+gas_flow_l_min                                    | Shielding Gas MFC                   | Flow controller to SCADA
+bead_height_mm                                    | Laser Profilometer (Keyence / Cognex) | Real-time metrology stream
+thermal_var_c                                     | Pyrometer (Raytek / LumaSense)      | Process monitoring OPC-UA
+acoustic_rms, vibration_rms                       | Piezo sensors on fixture            | DAQ to historian
+penetration_mm                                    | Inline ultrasound (Olympus)         | NDT stream to quality MES
+
+--------------------------------------------------
+VARIABLE DESCRIPTIONS:
+
+View A — Process Parameters (machine controller output):
+
+energy_j           - Laser pulse energy (J); coefficient -0.09 — higher pulse energy reduces defect risk through more complete melt pool.
+speed_mm_s         - Welding travel speed (mm/s); dominant defect driver in View A. Coefficient +0.36 — faster travel reduces energy density per unit length.
+frequency_khz      - Pulse repetition frequency (kHz); coefficient -0.13 — higher frequency enables slightly more stable energy delivery.
+spot_diameter_mm   - Focused beam spot diameter (mm); coefficient -0.01 — near-zero effect, absorbed by speed and energy terms.
+gas_flow_l_min     - Shielding gas flow rate (L/min); coefficient -0.17 — adequate gas flow provides a protective signal.
+
+View B — In-Process Sensor Monitoring (material response):
+
+bead_height_mm     - Weld bead height from laser profilometry (mm); coefficient -0.13 — proper bead geometry indicates a stable, complete melt pool.
+thermal_var_c      - Pyrometer thermal variance (°C); coefficient +0.16 — variance consistent with unstable melt pool dynamics.
+acoustic_rms       - Acoustic emission RMS signal (dimensionless); coefficient -0.10 — acoustic signal aligns with penetration and bead quality.
+penetration_mm     - Weld penetration depth from ultrasound (mm); coefficient -0.11 — full penetration indicates joint achieved.
+vibration_rms      - Vibration RMS during deposition (dimensionless); dominant defect signal in View B. Coefficient +0.34 — excessive vibration indicates instability during deposition.
+
+Target:
+
+defect_label       - Binary: 0 = conforming weld, 1 = defective weld, NaN = unlabeled. Of 150 labeled: 105 conforming (70%), 45 defective (30%).
+
+--------------------------------------------------
+FEATURE ENGINEERING:
+
+Each view has its own independent StandardScaler embedded in a Pipeline — prevents any information leakage between views during training or pseudo-labeling. Base learner: Logistic Regression with class_weight='balanced' (corrects for 30% defect rate in the labeled set). Confidence threshold for pseudo-labeling: 0.65. Co-Training loop ran 5 rounds; Round 1 added 1,294 pseudo-labels to View A and 969 to View B; Rounds 2–5 added only 14 additional pseudo-labels combined. Ensemble prediction: average probability from Model A and Model B. Test set: 30 held-out real-labeled welds separated before any Co-Training round began.
+
+--------------------------------------------------
+BUSINESS CONTEXT:
+
+Used by welding process engineers and quality managers on automotive body panel laser welding lines. Co-Training exploits the structural independence of the two instrument chains (machine controller vs. in-process sensors) to achieve mutual teaching: when View A is confident about a weld's quality, it donates a pseudo-label to expand View B's training set, and vice versa. This allows effective defect detection from only 8% labeled data, avoiding the prohibitive cost of full destructive or CT inspection on every weld.
+
+--------------------------------------------------
+GOAL:
+
+Detect laser weld defects using Co-Training on two structurally independent sensor views — process parameters (View A) and in-process material response (View B) — to train effective classifiers from only 150 labeled examples out of 1,912 total welds. Ensemble model achieved Accuracy = 80.0%, AUC-ROC = 0.841, F1 = 0.700, Recall = 77.8%, Precision = 63.6% on 30 held-out real-labeled welds.
